@@ -1,31 +1,30 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Volume2, Sun, Moon, Phone, UserPlus, ArrowLeft } from "lucide-react"
+import { Volume2, Sun, Moon,  } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
-import { auth } from "../lib/firebase/firebase";
+
+
 
 interface WelcomePageProps {
   isDarkMode: boolean
   toggleTheme: () => void
-  onGoogleLogin: () => Promise<void>
-  onPhoneLogin: () => void
+  onGoogleLogin: () => Promise<void>  
   isGoogleLoading: boolean
   firebaseReady: boolean
+  
+
+
 }
 
 export default function WelcomePage({
   isDarkMode,
   toggleTheme,
   onGoogleLogin,
-  onPhoneLogin,
   isGoogleLoading,
-  firebaseReady,
+  firebaseReady
 }: WelcomePageProps) {
   
   
@@ -145,7 +144,7 @@ export default function WelcomePage({
         {/* Right Side - Auth Card */}
         <div className="w-full max-w-md mx-auto">
           
-            // Sign In Card
+            
             <Card
               className={cn(
                 "shadow-2xl backdrop-blur-sm border transition-all duration-300",
@@ -210,20 +209,9 @@ export default function WelcomePage({
                   </span>
                 </Button>
 
-                {/* Phone Login */}
-                <Button
-                  onClick={onPhoneLogin}
-                  variant="outline"
-                  className={cn(
-                    "w-full h-12 text-left justify-start space-x-3 transition-all duration-200 hover:scale-[1.02]",
-                    isDarkMode
-                      ? "border-gray-600 bg-gray-800/50 text-gray-200 hover:bg-gray-700 hover:text-white hover:border-gray-500"
-                      : "border-gray-400 bg-gray-100/50 text-gray-800 hover:bg-gray-200 hover:border-gray-500",
-                  )}
-                >
-                  <Phone className="w-5 h-5 text-green-500" />
-                  <span className="flex-1">Continue with Phone Number</span>
-                </Button>
+                
+
+        
 
                 
 

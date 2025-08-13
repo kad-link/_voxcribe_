@@ -9,14 +9,17 @@ import { useFirebaseAuth } from "../lib/firebase/useFirebaseAuth";
 
 
 export default function VoiceToNotesApp() {
-  const { user, loading, signInWithGoogle, logout, firebaseReady, error } = useFirebaseAuth();
+  const { user, loading, signInWithGoogle, logout, firebaseReady, error  } = useFirebaseAuth();
   const [isDarkMode, setIsDarkMode] = useState(true)
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
-
+   
   //toggle theme feature
   const toggleTheme = () => {
     setIsDarkMode(!isDarkMode)
   }
+
+  
+
 
   //google login feature
   const handleGoogleLogin = async () => {
@@ -32,16 +35,7 @@ export default function VoiceToNotesApp() {
 };
 
 
-  const handlePhoneLogin = () => {
-    // Simulate phone login
-    setTimeout(() => {
-      setUser({
-        displayName: "Phone User",
-        email: "phone@voxcribe.com",
-        photoURL: null,
-      })
-    }, 1000)
-  }
+  
 
 //logout call
 const handleLogout = async () => {
@@ -108,7 +102,6 @@ const handleLogout = async () => {
         isDarkMode={isDarkMode}
         toggleTheme={toggleTheme}
         onGoogleLogin={handleGoogleLogin}
-        onPhoneLogin={handlePhoneLogin}
         isGoogleLoading={isGoogleLoading}
         firebaseReady={firebaseReady}
       />

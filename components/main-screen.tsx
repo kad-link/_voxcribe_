@@ -31,10 +31,14 @@ import {
   LogOut,
   ZoomIn,
   ZoomOut,
+
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase/firebase";
+import { supabase } from '../lib/supabaseClient';
+import { auth as firebaseAuth } from "../lib/firebase/firebase";
+import   History  from "../components/history"
+
+
 
 interface Note {
   id: string;
@@ -71,8 +75,18 @@ export default function MainScreen({
   const [isZooming, setIsZooming] = useState(false);
   const [clickedOutside, setClickedOutside] = useState(false);
   const notesContainerRef = useRef<HTMLDivElement>(null);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const [fullTranscription, setFullTranscription] = useState("");
 
-  const intervalRef = useRef<NodeJS.Timeout>();
+
+  let mediaRecorder: MediaRecorder;
+  let audioChunks: Blob[] = [];
+
+  
+  
+   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Add this after the isDarkMode state
   const [bookmarkedNotes, setBookmarkedNotes] = useState<Set<string>>(
@@ -126,6 +140,7 @@ export default function MainScreen({
       }
     };
   }, [isRecording]);
+  
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -135,33 +150,149 @@ export default function MainScreen({
       .padStart(2, "0")}`;
   };
 
-  const handleStartRecording = () => {
+  const handleStartRecording = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mediaRecorder = new MediaRecorder(stream);
+    mediaRecorderRef.current = mediaRecorder;
+    audioChunksRef.current = [];
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        audioChunksRef.current.push(event.data);
+      }
+    };
+
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(audioChunksRef.current, { type: "audio/mp3" });
+      setAudioBlob(blob);
+    };
+
+    mediaRecorder.start();
     setIsRecording(true);
-    setRecordingTime(0);
-  };
+  } catch (err) {
+    console.error("Error starting recording:", err);
+  }
+};
 
-  const handleStopRecording = () => {
-    setIsRecording(false);
-    setIsProcessing(true);
-
-    // Simulate processing
-    setTimeout(() => {
-      setIsProcessing(false);
-      // Add new note (mock)
-      const newNote: Note = {
-        id: Date.now().toString(),
-        title: "New Recording",
-        content: "This is a sample transcription of your recording...",
-        summary: "Sample summary of the recorded content.",
-        duration: formatTime(recordingTime),
-        createdAt: new Date().toISOString().split("T")[0],
-        tags: ["recording", "new"],
-        speaker: user?.displayName || "You",
+const stopRecording = (): Promise<Blob> => {
+  return new Promise((resolve) => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: "audio/mp3" });
+        setAudioBlob(blob);
+        resolve(blob);
       };
-      setNotes((prev) => [newNote, ...prev]);
-      setRecordingTime(0);
-    }, 3000);
-  };
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  });
+};
+
+const handleStopRecording = async () => {
+  setIsProcessing(true);
+
+  try {
+    const blob = await stopRecording(); 
+
+        setRecordingTime(0);
+
+    if (!blob || blob.size === 0) {
+      console.error("No audio captured");
+      setIsProcessing(false);
+      return;
+    }
+
+    const uniqueName = `recording_${Date.now()}.webm`;
+
+
+
+    const { data: audioUpload, error: audioError } = await supabase
+      .storage
+      .from('uploads')
+      .upload(uniqueName, blob);
+
+    if (audioError) throw audioError;
+
+    const { data: publicUrlData } = supabase
+      .storage
+      .from('uploads')
+      .getPublicUrl(uniqueName);
+
+    const audioUrl = publicUrlData.publicUrl;
+
+
+   
+
+
+
+    const formData = new FormData();
+
+    
+    formData.append("audio", blob, uniqueName);
+  
+
+    const response = await fetch("http://127.0.0.1:5000/transcribe", {
+      method: "POST",
+      body: formData,
+    });
+
+  
+    console.log("Transcription response status:", response.status);
+
+
+
+
+    const data = await response.json();
+     console.log("Transcription response body:", data);
+
+     if (!response.ok) throw new Error("Failed to transcribe audio");
+
+
+     const firebaseUser = firebaseAuth.currentUser;
+     if (!firebaseUser) {
+  throw new Error("User is not logged in");
+}
+
+
+
+    // Save to Supabase 'recordings' table
+    const { error: insertError } = await supabase
+      .from('recordings')
+      .insert([
+        {
+          firebase_uid: firebaseUser.uid,
+          audio_url: audioUrl,
+          text_url: null, // Optional if you want to save transcription file later
+          transcription: data.transcription,
+          summary: "Summary coming soon..."
+        }
+      ]);
+
+    if (insertError) throw insertError;
+
+
+    const newNote: Note = {
+      id: Date.now().toString(),
+      title: "New Recording",
+      content: data.transcription,
+      summary: "Summary coming soon...",
+      duration: formatTime(recordingTime),
+      createdAt: new Date().toISOString().split("T")[0],
+      tags: ["recording", "new"],
+      speaker:  "You",
+    };
+
+    setNotes((prev) => [newNote, ...prev]);
+    setFullTranscription(data.transcription); 
+  } catch (err) {
+    console.error("Error:", err);
+  } finally {
+    setIsProcessing(false);
+  }
+};
+
+
 
   const toggleBookmark = (noteId: string) => {
     setBookmarkedNotes((prev) => {
@@ -219,18 +350,13 @@ export default function MainScreen({
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
 
-      // Handle user menu
-      // if (showUserMenu) {
-      //   setShowUserMenu(false);
-      // }
+      
 
-      // Handle note selection - check if click is outside the notes container
       if (
         selectedNote &&
         notesContainerRef.current &&
         !notesContainerRef.current.contains(target)
       ) {
-        // Don't close if clicking on zoom controls or other UI elements
         if (
           !target.closest("[data-note-control]") &&
           !target.closest(".fixed")
@@ -268,6 +394,9 @@ export default function MainScreen({
 
     console.log("User photo URL:", user?.photoURL);
 
+
+
+    
   return (
       
 
@@ -352,7 +481,7 @@ export default function MainScreen({
                   <Button
                     variant="ghost"
                     className={cn(
-                      "flex items-center space-x-3 h-10 px-3 transition-all duration-300",
+                      "flex items-center space-x-3 h-10 px-3 overflow-hidden transition-all duration-300",
                       isDarkMode
                         ? "text-gray-300 hover:text-white hover:bg-gray-800"
                         : "text-gray-700 hover:text-gray-900 hover:bg-gray-100"
@@ -362,14 +491,13 @@ export default function MainScreen({
 
                     {user.photoURL && (
                      <img
-  src={user.photoURL} 
-  alt="Profile"
-  style={{ width: "32px", height: "32px", borderRadius: "50%" }}
-/>
+                          src={user.photoURL} 
+                          alt="Profile"
+                          style={{ width: "32px", height: "32px", borderRadius: "50%" }}/>
 
 
                     )}
-                    <div className="text-left max-w-[180px] min-w-0">
+                    <div className="flex-1 min-w-0 text-left">
                       <p className="text-sm font-medium truncate " >
                         {user.displayName }
                       </p>
@@ -463,6 +591,7 @@ export default function MainScreen({
       <div className="container mx-auto px-4 py-8">
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Recording Panel */}
+          
           <div className="lg:col-span-1">
             <Card
               className={cn(
@@ -693,6 +822,8 @@ export default function MainScreen({
           </div>
 
           {/* Notes List */}
+          
+         
           <div className="lg:col-span-2">
             <div className="mb-6">
               <div className="flex items-center space-x-4 mb-4">
@@ -746,7 +877,7 @@ export default function MainScreen({
                       onClick={handleZoomOut}
                     />
                   )}
-
+                  
                   <CardHeader
                     className={cn(
                       "pb-3 transition-all duration-300",
@@ -1018,6 +1149,22 @@ export default function MainScreen({
                 </Card>
               ))}
             </div>
+
+             
+            <Badge
+                          key={"HISTORY"}
+                          variant="outline"
+                          className={cn(
+                            "px-4 py-2 text-lg transition-all duration-900 mb-4 mt-4",
+                            isDarkMode
+                              ? "border-gray-700 text-gray-400 hover:bg-gray-800"
+                              : "border-gray-400 text-gray-600 hover:bg-gray-200",
+                            
+                          )}
+                        >
+                          History
+                        </Badge>
+            <History />
 
             {filteredNotes.length === 0 && (
               <Card
