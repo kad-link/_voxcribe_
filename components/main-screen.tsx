@@ -31,14 +31,13 @@ import {
   LogOut,
   ZoomIn,
   ZoomOut,
-
+  Plus,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from "../lib/supabaseClient";
 import { auth as firebaseAuth } from "../lib/firebase/firebase";
-import   History  from "../components/history"
-
-
+import History from "../components/history";
 
 interface Note {
   id: string;
@@ -79,49 +78,26 @@ export default function MainScreen({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const [fullTranscription, setFullTranscription] = useState("");
-
+  const [customTags, setCustomTags] = useState<string[]>([]);
+  const [showTagInput, setShowTagInput] = useState<string | null>(null);
+  const [newTagInput, setNewTagInput] = useState("");
 
   let mediaRecorder: MediaRecorder;
   let audioChunks: Blob[] = [];
 
-  
-  
-   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Add this after the isDarkMode state
+  const [speakerName, setSpeakerName] = useState<string>("");
+
   const [bookmarkedNotes, setBookmarkedNotes] = useState<Set<string>>(
-    new Set(["1"])
+    new Set()
   );
 
-  // Mock notes data
-  const [notes, setNotes] = useState<Note[]>([
-    {
-      id: "1",
-      title: "Team Meeting - Project Planning",
-      content:
-        "Discussed the upcoming product launch timeline. Key points covered include market research findings, target demographics, and budget allocation. The team agreed on a phased approach to development.",
-      summary:
-        "Product launch planning meeting covering research, demographics, and phased development approach.",
-      duration: "15:32",
-      createdAt: new Date().toISOString().split("T")[0], // Today's date
-      tags: ["meeting", "planning", "product"],
-      speaker: "Sarah Johnson",
-      isBookmarked: true,
-    },
-    {
-      id: "2",
-      title: "Lecture - Machine Learning Basics",
-      content:
-        "Introduction to supervised and unsupervised learning algorithms. Covered linear regression, decision trees, and clustering methods with practical examples.",
-      summary:
-        "ML fundamentals: supervised/unsupervised learning, regression, decision trees, clustering.",
-      duration: "45:18",
-      createdAt: "2024-01-14",
-      tags: ["lecture", "AI", "education"],
-      speaker: "Dr. Michael Chen",
-      isBookmarked: false,
-    },
-  ]);
+  const [notes, setNotes] = useState<Note[]>([]);
+  console.log(
+    "🔍 Current notes and their IDs:",
+    notes.map((note) => ({ id: note.id, title: note.title }))
+  );
 
   useEffect(() => {
     if (isRecording) {
@@ -140,7 +116,6 @@ export default function MainScreen({
       }
     };
   }, [isRecording]);
-  
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -151,167 +126,299 @@ export default function MainScreen({
   };
 
   const handleStartRecording = async () => {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const mediaRecorder = new MediaRecorder(stream);
-    mediaRecorderRef.current = mediaRecorder;
-    audioChunksRef.current = [];
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
 
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        audioChunksRef.current.push(event.data);
-      }
-    };
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
 
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(audioChunksRef.current, { type: "audio/mp3" });
-      setAudioBlob(blob);
-    };
-
-    mediaRecorder.start();
-    setIsRecording(true);
-  } catch (err) {
-    console.error("Error starting recording:", err);
-  }
-};
-
-const stopRecording = (): Promise<Blob> => {
-  return new Promise((resolve) => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.onstop = () => {
+      mediaRecorder.onstop = () => {
         const blob = new Blob(audioChunksRef.current, { type: "audio/mp3" });
         setAudioBlob(blob);
-        resolve(blob);
       };
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Error starting recording:", err);
     }
-  });
-};
+  };
 
-const handleStopRecording = async () => {
-  setIsProcessing(true);
-
-  try {
-    const blob = await stopRecording(); 
-
-        setRecordingTime(0);
-
-    if (!blob || blob.size === 0) {
-      console.error("No audio captured");
-      setIsProcessing(false);
-      return;
-    }
-
-    const uniqueName = `recording_${Date.now()}.webm`;
-
-
-
-    const { data: audioUpload, error: audioError } = await supabase
-      .storage
-      .from('uploads')
-      .upload(uniqueName, blob);
-
-    if (audioError) throw audioError;
-
-    const { data: publicUrlData } = supabase
-      .storage
-      .from('uploads')
-      .getPublicUrl(uniqueName);
-
-    const audioUrl = publicUrlData.publicUrl;
-
-
-   
-
-
-
-    const formData = new FormData();
-
-    
-    formData.append("audio", blob, uniqueName);
-  
-
-    const response = await fetch("http://127.0.0.1:5000/transcribe", {
-      method: "POST",
-      body: formData,
+  const stopRecording = (): Promise<Blob> => {
+    return new Promise((resolve) => {
+      if (mediaRecorderRef.current && isRecording) {
+        mediaRecorderRef.current.onstop = () => {
+          const blob = new Blob(audioChunksRef.current, { type: "audio/mp3" });
+          setAudioBlob(blob);
+          resolve(blob);
+        };
+        mediaRecorderRef.current.stop();
+        setIsRecording(false);
+      }
     });
+  };
 
-  
-    console.log("Transcription response status:", response.status);
+  // Key changes to make in your handleStopRecording function in MainScreen
 
+  const handleStopRecording = async () => {
+    setIsProcessing(true);
 
+    try {
+      const blob = await stopRecording();
 
+      // Capture the recording time before resetting it
+      const recordingDuration = recordingTime;
+      setRecordingTime(0);
 
-    const data = await response.json();
-     console.log("Transcription response body:", data);
+      if (!blob || blob.size === 0) {
+        console.error("No audio captured");
+        setIsProcessing(false);
+        return;
+      }
 
-     if (!response.ok) throw new Error("Failed to transcribe audio");
+      const uniqueName = `recording_${Date.now()}.webm`;
 
+      const { data: audioUpload, error: audioError } = await supabase.storage
+        .from("uploads")
+        .upload(uniqueName, blob);
 
-     const firebaseUser = firebaseAuth.currentUser;
-     if (!firebaseUser) {
-  throw new Error("User is not logged in");
-}
+      if (audioError) throw audioError;
 
+      const { data: publicUrlData } = supabase.storage
+        .from("uploads")
+        .getPublicUrl(uniqueName);
 
+      const audioUrl = publicUrlData.publicUrl;
 
-    // Save to Supabase 'recordings' table
-    const { error: insertError } = await supabase
-      .from('recordings')
-      .insert([
+      const formData = new FormData();
+      formData.append("audio", blob, uniqueName);
+
+      const response = await fetch("http://127.0.0.1:5000/transcribe", {
+        method: "POST",
+        body: formData,
+      });
+
+      console.log("Transcription response status:", response.status);
+
+      const data = await response.json();
+      console.log("Transcription response body:", data);
+
+      if (!response.ok) throw new Error("Failed to transcribe audio");
+
+      const firebaseUser = firebaseAuth.currentUser;
+      if (!firebaseUser) {
+        throw new Error("User is not logged in");
+      }
+
+      // Format duration
+      const formattedDuration = formatTime(recordingDuration);
+
+      // Get current date for local note creation
+      const currentDate = new Date();
+      const dateOnly = currentDate.toISOString().split("T")[0];
+
+      // Use custom speaker name if provided, otherwise fallback to user's display name
+      const finalSpeakerName =
+        speakerName.trim() || firebaseUser.displayName || "Unknown Speaker";
+
+      // Use the actual summary from Flask response
+      const actualSummary = data.summary || "Summary generation failed";
+
+      // Single insert operation that returns the inserted record
+      const { data: insertedRecord, error: insertRecordError } = await supabase
+        .from("recordings")
+        .insert([
+          {
+            firebase_uid: firebaseUser.uid,
+            audio_url: audioUrl,
+            text_url: null,
+            transcription: data.transcription,
+            summary: actualSummary,
+            duration: formattedDuration,
+            speaker: finalSpeakerName,
+            tags: [],
+          },
+        ])
+        .select()
+        .single();
+
+      if (insertRecordError) throw insertRecordError;
+
+      // Create note for local state with real summary
+      const newNote: Note = {
+        id: insertedRecord.id, // Real UUID from database
+        title: "New Recording",
+        content: data.transcription,
+        summary: actualSummary,
+        duration: formattedDuration,
+        createdAt: dateOnly,
+        tags: [],
+        speaker: finalSpeakerName,
+      };
+
+      setNotes((prev) => [newNote, ...prev]);
+      setFullTranscription(data.transcription);
+
+      // Reset speaker name after successful recording
+      setSpeakerName("");
+
+      console.log(
+        "✅ Successfully saved recording with AI summary:",
+        actualSummary?.substring(0, 100) + "..."
+      );
+    } catch (err) {
+      console.error("❌ Error:", err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const [regeneratingSummary, setRegeneratingSummary] = useState<string | null>(
+    null
+  );
+
+  const handleRegenerateSummary = async (noteId: string) => {
+    setRegeneratingSummary(noteId);
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:5000/regenerate-summary/${noteId}`,
         {
-          firebase_uid: firebaseUser.uid,
-          audio_url: audioUrl,
-          text_url: null, // Optional if you want to save transcription file later
-          transcription: data.transcription,
-          summary: "Summary coming soon..."
+          method: "POST",
         }
-      ]);
+      );
 
-    if (insertError) throw insertError;
+      const data = await response.json();
 
+      if (data.success && data.summary) {
+        // Update local state
+        setNotes((prev) =>
+          prev.map((note) =>
+            note.id === noteId ? { ...note, summary: data.summary } : note
+          )
+        );
 
-    const newNote: Note = {
-      id: Date.now().toString(),
-      title: "New Recording",
-      content: data.transcription,
-      summary: "Summary coming soon...",
-      duration: formatTime(recordingTime),
-      createdAt: new Date().toISOString().split("T")[0],
-      tags: ["recording", "new"],
-      speaker:  "You",
-    };
+        // Update database
+        await supabase
+          .from("recordings")
+          .update({
+            summary: data.summary,
+          })
+          .eq("id", noteId);
 
-    setNotes((prev) => [newNote, ...prev]);
-    setFullTranscription(data.transcription); 
-  } catch (err) {
-    console.error("Error:", err);
-  } finally {
-    setIsProcessing(false);
-  }
-};
-
-
+        console.log("✅ Summary regenerated successfully");
+      } else {
+        console.error("❌ Failed to regenerate summary:", data.error);
+        alert("Failed to regenerate summary. Please try again.");
+      }
+    } catch (error) {
+      console.error("❌ Error regenerating summary:", error);
+      alert("Error regenerating summary. Please try again.");
+    } finally {
+      setRegeneratingSummary(null);
+    }
+  };
 
   const toggleBookmark = (noteId: string) => {
+    console.log("🔖 toggleBookmark called with noteId:", noteId);
+    console.log(
+      "🔖 Current bookmarkedNotes before:",
+      Array.from(bookmarkedNotes)
+    );
+    console.log("🔖 bookmarkedNotes.size before:", bookmarkedNotes.size);
+
     setBookmarkedNotes((prev) => {
+      console.log("🔖 Inside setBookmarkedNotes, prev:", Array.from(prev));
       const newBookmarks = new Set(prev);
-      if (newBookmarks.has(noteId)) {
+      const isCurrentlyBookmarked = newBookmarks.has(noteId);
+
+      console.log("🔖 isCurrentlyBookmarked:", isCurrentlyBookmarked);
+
+      if (isCurrentlyBookmarked) {
         newBookmarks.delete(noteId);
+        console.log("🔖 Removed bookmark, new size:", newBookmarks.size);
       } else {
         newBookmarks.add(noteId);
+        console.log("🔖 Added bookmark, new size:", newBookmarks.size);
       }
+
+      console.log("🔖 Final newBookmarks:", Array.from(newBookmarks));
+
+      // Update notes with the correct bookmark status
+      setNotes((prevNotes) =>
+        prevNotes.map((note) =>
+          note.id === noteId
+            ? { ...note, isBookmarked: !isCurrentlyBookmarked }
+            : note
+        )
+      );
+
       return newBookmarks;
     });
+  };
 
-    setNotes((prev) =>
-      prev.map((note) =>
-        note.id === noteId
-          ? { ...note, isBookmarked: !bookmarkedNotes.has(noteId) }
-          : note
-      )
-    );
+  const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
+
+  const handleDeleteNote = async (noteId: string) => {
+    console.log("🗑️ Delete button clicked for note:", noteId);
+
+    try {
+      // Find the note to get additional info if needed
+      const noteToDelete = notes.find((note) => note.id === noteId);
+      if (!noteToDelete) {
+        console.error("Note not found");
+        return;
+      }
+
+      console.log("📝 Note found:", noteToDelete);
+
+      // Delete from Supabase database
+      console.log("🔄 Attempting to delete from database...");
+      const { error } = await supabase
+        .from("recordings")
+        .delete()
+        .eq("id", noteId);
+
+      if (error) {
+        console.error("❌ Error deleting from database:", error);
+        return;
+      }
+
+      console.log("✅ Successfully deleted from database");
+
+      // Remove from local state
+      setNotes((prev) => prev.filter((note) => note.id !== noteId));
+
+      // Remove from bookmarks if it was bookmarked
+      setBookmarkedNotes((prev) => {
+        const newBookmarks = new Set(prev);
+        newBookmarks.delete(noteId);
+        return newBookmarks;
+      });
+
+      // Clear selection if this note was selected
+      if (selectedNote?.id === noteId) {
+        setSelectedNote(null);
+      }
+
+      // Clear zoom if this note was zoomed
+      if (zoomedNote === noteId) {
+        setZoomedNote(null);
+      }
+
+      // ✅ Trigger History component refresh
+      setHistoryRefreshTrigger((prev) => prev + 1);
+
+      console.log("✅ Note deleted successfully from local state");
+    } catch (err) {
+      console.error("❌ Error deleting note:", err);
+    }
   };
 
   const filteredNotes = notes.filter(
@@ -345,12 +452,9 @@ const handleStopRecording = async () => {
     }, 150);
   };
 
-  // Add this useEffect after the other useEffects
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
-
-      
 
       if (
         selectedNote &&
@@ -392,14 +496,191 @@ const handleStopRecording = async () => {
     };
   }, [zoomedNote]);
 
-    console.log("User photo URL:", user?.photoURL);
+  console.log("User photo URL:", user?.photoURL);
+
+  console.log("🔍 Notes count:", notes.length);
+  console.log("🔍 Filtered notes count:", filteredNotes.length);
+  console.log("🔍 All notes:", notes);
+  console.log("🔍 Bookmarked notes:", Array.from(bookmarkedNotes));
+
+  // Add this useEffect after your other state declarations
+  useEffect(() => {
+    const fetchRecordings = async () => {
+      const firebaseUser = firebaseAuth.currentUser;
+      if (!firebaseUser) {
+        console.log("❌ No Firebase user found");
+        return;
+      }
+
+      console.log("🔄 Fetching recordings for user:", firebaseUser.uid);
+
+      try {
+        const { data, error } = await supabase
+          .from("recordings")
+          .select("*")
+          .eq("firebase_uid", firebaseUser.uid)
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          console.error("❌ Error fetching recordings:", error);
+          return;
+        }
+
+        console.log("✅ Fetched recordings:", data);
+
+        if (data && data.length > 0) {
+          const formattedNotes = data.map((record) => ({
+            id: record.id, // This will be the UUID from database
+            title: record.title || "Recording",
+            content: record.transcription || "",
+            summary: record.summary || "No summary available",
+            duration: record.duration || "0:00",
+            createdAt: new Date(record.created_at).toISOString().split("T")[0],
+            tags: record.tags || [],
+            speaker: record.speaker || "Unknown",
+          }));
+
+          setNotes(formattedNotes);
+          console.log("✅ Notes loaded:", formattedNotes.length);
+        } else {
+          console.log("ℹ️ No recordings found in database");
+        }
+      } catch (err) {
+        console.error("❌ Error in fetchRecordings:", err);
+      }
+    };
+
+    fetchRecordings();
+  }, []);
+
+  // Helper function to convert duration string to seconds
+  const parseDuration = (duration: string): number => {
+    if (!duration) return 0;
+
+    const parts = duration.split(":");
+    if (parts.length === 2) {
+      const minutes = parseInt(parts[0]) || 0;
+      const seconds = parseInt(parts[1]) || 0;
+      return minutes * 60 + seconds;
+    }
+    return 0;
+  };
+
+  // Helper function to format total seconds back to duration string
+  const formatTotalDuration = (totalSeconds: number): string => {
+    if (totalSeconds === 0) return "0m";
+
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    let result = "";
+    if (hours > 0) {
+      result += `${hours}h `;
+    }
+    if (minutes > 0) {
+      result += `${minutes}m`;
+    }
+    if (seconds > 0 && hours === 0) {
+      result += ` ${seconds}s`;
+    }
+
+    return result.trim() || "0m";
+  };
+
+  // Calculate total duration
+  const totalDurationSeconds = notes.reduce((total, note) => {
+    return total + parseDuration(note.duration);
+  }, 0);
+
+  const totalDurationFormatted = formatTotalDuration(totalDurationSeconds);
+
+  const getStartOfWeek = (date: Date): Date => {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day;
+    return new Date(d.setDate(diff));
+  };
+
+  // Helper function to check if a date is within the current week
+  const isWithinCurrentWeek = (dateString: string): boolean => {
+    const noteDate = new Date(dateString);
+    const today = new Date();
+    const startOfWeek = getStartOfWeek(today);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+
+    // Set time to end of day for endOfWeek
+    endOfWeek.setHours(23, 59, 59, 999);
+
+    return noteDate >= startOfWeek && noteDate <= endOfWeek;
+  };
+
+  // Add this calculation in your MainScreen component, after the totalDurationFormatted calculation:
+
+  // Calculate notes from this week
+  const thisWeekNotes = notes.filter((note) =>
+    isWithinCurrentWeek(note.createdAt)
+  );
+
+  const handleAddCustomTag = async (noteId: string) => {
+    if (!newTagInput.trim()) return;
+
+    const newTag = newTagInput.trim().toLowerCase();
+
+    // Find the current note BEFORE updating
+    const currentNote = notes.find((note) => note.id === noteId);
+    if (!currentNote) {
+      console.error("❌ Note not found:", noteId);
+      return;
+    }
+
+    // Check if tag already exists
+    if (currentNote.tags.includes(newTag)) {
+      console.log("ℹ️ Tag already exists:", newTag);
+      setNewTagInput("");
+      setShowTagInput(null);
+      return;
+    }
+
+    const updatedTags = [...currentNote.tags, newTag];
+    console.log("🏷️ Adding tag:", newTag, "to note:", noteId);
+    console.log("🏷️ Updated tags array:", updatedTags);
+
+    try {
+      // ✅ UPDATE DATABASE FIRST
+      const { error } = await supabase
+        .from("recordings")
+        .update({ tags: updatedTags })
+        .eq("id", noteId);
+
+      if (error) {
+        console.error("❌ Error updating tags in database:", error);
+        alert("Failed to add tag. Please try again.");
+        return;
+      }
+
+      console.log("✅ Successfully added tag to database");
+
+      // ✅ UPDATE LOCAL STATE AFTER DATABASE SUCCESS
+      setNotes((prev) =>
+        prev.map((note) =>
+          note.id === noteId ? { ...note, tags: updatedTags } : note
+        )
+      );
+
+      // Reset input
+      setNewTagInput("");
+      setShowTagInput(null);
+    } catch (err) {
+      console.error("❌ Error adding tag:", err);
+      alert("Failed to add tag. Please try again.");
+    }
+  };
 
 
 
-    
   return (
-      
-
     <div
       className={cn(
         "min-h-screen transition-all duration-500",
@@ -488,21 +769,23 @@ const handleStopRecording = async () => {
                     )}
                     onClick={() => setShowUserMenu(!showUserMenu)}
                   >
-
                     {user.photoURL && (
-                     <img
-                          src={user.photoURL} 
-                          alt="Profile"
-                          style={{ width: "32px", height: "32px", borderRadius: "50%" }}/>
-
-
+                      <img
+                        src={user.photoURL}
+                        alt="Profile"
+                        style={{
+                          width: "32px",
+                          height: "32px",
+                          borderRadius: "50%",
+                        }}
+                      />
                     )}
                     <div className="flex-1 min-w-0 text-left">
-                      <p className="text-sm font-medium truncate " >
-                        {user.displayName }
+                      <p className="text-sm font-medium truncate ">
+                        {user.displayName}
                       </p>
                       <p className="text-xs opacity-70 truncate ">
-                        {user.email }
+                        {user.email}
                       </p>
                     </div>
                     <User className="w-4 h-4" />
@@ -564,17 +847,15 @@ const handleStopRecording = async () => {
                           )}
                           onClick={async (e) => {
                             e.preventDefault();
-                            e.stopPropagation();                            
+                            e.stopPropagation();
                             try {
                               await onLogout();
-                              
                             } catch (error) {
                               console.error("❌ Logout failed:", error);
                               setShowUserMenu(false);
                             }
                           }}
                         >
-                          
                           Sign Out
                         </Button>
                       </div>
@@ -582,16 +863,15 @@ const handleStopRecording = async () => {
                   )}
                 </div>
               )}
-</div>
-</div>
-</div>
-</header>
-
+            </div>
+          </div>
+        </div>
+      </header>
 
       <div className="container mx-auto px-4 py-8">
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Recording Panel */}
-          
+
           <div className="lg:col-span-1">
             <Card
               className={cn(
@@ -618,6 +898,42 @@ const handleStopRecording = async () => {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                {/* Speaker Name Input */}
+                <div className="space-y-2">
+                  <label
+                    className={cn(
+                      "text-sm font-medium",
+                      isDarkMode ? "text-gray-300" : "text-gray-700"
+                    )}
+                  >
+                    Speaker Name (Optional)
+                  </label>
+                  <Input
+                    placeholder="Enter speaker name..."
+                    value={speakerName}
+                    onChange={(e) => setSpeakerName(e.target.value)}
+                    disabled={isRecording || isProcessing}
+                    className={cn(
+                      "transition-all duration-300",
+                      isDarkMode
+                        ? "border-gray-700 bg-gray-800/70 text-white placeholder:text-gray-500"
+                        : "border-gray-300 bg-white/70 text-gray-900 placeholder:text-gray-500"
+                    )}
+                  />
+                  <p
+                    className={cn(
+                      "text-xs",
+                      isDarkMode ? "text-gray-500" : "text-gray-600"
+                    )}
+                  >
+                    {speakerName.trim()
+                      ? `Will be saved as: ${speakerName.trim()}`
+                      : `Will use your name: ${
+                          user?.displayName || "Unknown Speaker"
+                        }`}
+                  </p>
+                </div>
+
                 {/* Recording Button */}
                 <div className="flex flex-col items-center space-y-4">
                   <div
@@ -764,7 +1080,7 @@ const handleStopRecording = async () => {
                       isDarkMode ? "text-gray-400" : "text-gray-600"
                     )}
                   >
-                    This Day
+                    Today
                   </span>
                   <Badge
                     variant="secondary"
@@ -794,7 +1110,7 @@ const handleStopRecording = async () => {
                         : "bg-gray-200 text-gray-700"
                     )}
                   >
-                    2
+                    {thisWeekNotes.length}
                   </Badge>
                 </div>
                 <div className="flex justify-between items-center">
@@ -814,7 +1130,7 @@ const handleStopRecording = async () => {
                         : "bg-gray-200 text-gray-700"
                     )}
                   >
-                    1h 0m
+                    {totalDurationFormatted}
                   </Badge>
                 </div>
               </CardContent>
@@ -822,8 +1138,7 @@ const handleStopRecording = async () => {
           </div>
 
           {/* Notes List */}
-          
-         
+
           <div className="lg:col-span-2">
             <div className="mb-6">
               <div className="flex items-center space-x-4 mb-4">
@@ -877,7 +1192,7 @@ const handleStopRecording = async () => {
                       onClick={handleZoomOut}
                     />
                   )}
-                  
+
                   <CardHeader
                     className={cn(
                       "pb-3 transition-all duration-300",
@@ -899,15 +1214,6 @@ const handleStopRecording = async () => {
                           >
                             {note.title}
                           </CardTitle>
-                          {bookmarkedNotes.has(note.id) && (
-                            <Bookmark
-                              className={cn(
-                                "w-4 h-4 text-yellow-500 fill-yellow-500 transition-all duration-300",
-                                selectedNote?.id === note.id && "w-5 h-5",
-                                zoomedNote === note.id && "w-6 h-6"
-                              )}
-                            />
-                          )}
                         </div>
                         <div
                           className={cn(
@@ -942,48 +1248,8 @@ const handleStopRecording = async () => {
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">
-                        {/* Zoom Controls */}
-                        {zoomedNote !== note.id ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            data-note-control="true"
-                            className={cn(
-                              "transition-all duration-300 opacity-70 hover:opacity-100",
-                              isDarkMode
-                                ? "text-gray-400 hover:text-white hover:bg-gray-800"
-                                : "text-gray-600 hover:text-gray-900 hover:bg-gray-100",
-                              selectedNote?.id === note.id &&
-                                "w-10 h-10 opacity-100"
-                            )}
-                            onClick={(e) => handleZoomIn(note.id, e)}
-                            title="Zoom In"
-                          >
-                            <ZoomIn
-                              className={cn(
-                                "w-4 h-4 transition-all duration-300",
-                                selectedNote?.id === note.id && "w-5 h-5"
-                              )}
-                            />
-                          </Button>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            data-note-control="true"
-                            className={cn(
-                              "transition-all duration-300 opacity-100",
-                              isDarkMode
-                                ? "text-gray-400 hover:text-white hover:bg-gray-800"
-                                : "text-gray-600 hover:text-gray-900 hover:bg-gray-100",
-                              "w-12 h-12"
-                            )}
-                            onClick={handleZoomOut}
-                            title="Zoom Out"
-                          >
-                            <ZoomOut className="w-6 h-6" />
-                          </Button>
-                        )}
+                       
+                        
 
                         <Button
                           size="sm"
@@ -999,6 +1265,17 @@ const handleStopRecording = async () => {
                             zoomedNote === note.id && "w-12 h-12 opacity-100"
                           )}
                           onClick={(e) => {
+                            console.log("🎯 BOOKMARK BUTTON CLICKED!", note.id);
+                            const isCurrentlyBookmarked = bookmarkedNotes.has(
+                              note.id
+                            );
+
+                            if (isCurrentlyBookmarked) {
+                              alert("Selected Note De-Bookmarked"); // ← This line
+                            } else {
+                              alert("Selected Note Bookmarked"); // ← This line
+                            }
+
                             e.stopPropagation();
                             toggleBookmark(note.id);
                           }}
@@ -1014,29 +1291,9 @@ const handleStopRecording = async () => {
                             )}
                           />
                         </Button>
+                        
                         <Button
-                          size="sm"
-                          variant="ghost"
-                          data-note-control="true"
-                          className={cn(
-                            "transition-all duration-300 opacity-70 hover:opacity-100",
-                            isDarkMode
-                              ? "text-gray-400 hover:text-white hover:bg-gray-800"
-                              : "text-gray-600 hover:text-gray-900 hover:bg-gray-100",
-                            selectedNote?.id === note.id &&
-                              "w-10 h-10 opacity-100",
-                            zoomedNote === note.id && "w-12 h-12 opacity-100"
-                          )}
-                        >
-                          <Download
-                            className={cn(
-                              "w-4 h-4 transition-all duration-300",
-                              selectedNote?.id === note.id && "w-5 h-5",
-                              zoomedNote === note.id && "w-6 h-6"
-                            )}
-                          />
-                        </Button>
-                        <Button
+                          onClick={() => handleDeleteNote(note.id)}
                           size="sm"
                           variant="ghost"
                           data-note-control="true"
@@ -1127,44 +1384,113 @@ const handleStopRecording = async () => {
                       </div>
                     )}
 
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-2 items-center">
                       {note.tags.map((tag) => (
-                        <Badge
-                          key={tag}
-                          variant="outline"
-                          className={cn(
-                            "text-xs transition-all duration-300",
-                            isDarkMode
-                              ? "border-gray-700 text-gray-400 hover:bg-gray-800"
-                              : "border-gray-400 text-gray-600 hover:bg-gray-200",
-                            selectedNote?.id === note.id && "text-sm px-3 py-1",
-                            zoomedNote === note.id && "text-base px-4 py-2"
-                          )}
-                        >
-                          {tag}
-                        </Badge>
+                        <div key={tag} className="relative group">
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "text-xs transition-all duration-300 pr-6",
+                              isDarkMode
+                                ? "border-gray-700 text-gray-400 hover:bg-gray-800"
+                                : "border-gray-400 text-gray-600 hover:bg-gray-200",
+                              selectedNote?.id === note.id &&
+                                "text-sm px-3 py-1",
+                              zoomedNote === note.id && "text-base px-4 py-2"
+                            )}
+                          >
+                            {tag}
+                            
+                          </Badge>
+                        </div>
                       ))}
+
+                      {/* Add Tag Button */}
+                      {showTagInput === note.id ? (
+                        <div className="flex items-center gap-2">
+                          <Input
+                            value={newTagInput}
+                            onChange={(e) => setNewTagInput(e.target.value)}
+                            placeholder="Enter tag..."
+                            className={cn(
+                              "h-6 text-xs w-24 transition-all duration-300",
+                              isDarkMode
+                                ? "border-gray-700 bg-gray-800 text-white"
+                                : "border-gray-300 bg-white text-gray-900",
+                              selectedNote?.id === note.id &&
+                                "h-8 text-sm w-32",
+                              zoomedNote === note.id && "h-10 text-base w-40"
+                            )}
+                            onKeyPress={(e) => {
+                              if (e.key === "Enter") {
+                                handleAddCustomTag(note.id);
+                              }
+                              if (e.key === "Escape") {
+                                setShowTagInput(null);
+                                setNewTagInput("");
+                              }
+                            }}
+                            onBlur={() => {
+                              if (newTagInput.trim()) {
+                                handleAddCustomTag(note.id);
+                              } else {
+                                setShowTagInput(null);
+                              }
+                            }}
+                            autoFocus
+                          />
+                        </div>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          data-note-control="true"
+                          className={cn(
+                            "w-6 h-6 p-0 rounded-full transition-all duration-300",
+                            isDarkMode
+                              ? "text-gray-400 hover:text-white hover:bg-gray-800 border border-gray-700"
+                              : "text-gray-600 hover:text-gray-900 hover:bg-gray-100 border border-gray-300",
+                            selectedNote?.id === note.id && "w-8 h-8",
+                            zoomedNote === note.id && "w-10 h-10"
+                          )}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowTagInput(note.id);
+                          }}
+                          title="Add custom tag"
+                        >
+                          <Plus
+                            className={cn(
+                              "w-3 h-3 transition-all duration-300",
+                              selectedNote?.id === note.id && "w-4 h-4",
+                              zoomedNote === note.id && "w-5 h-5"
+                            )}
+                          />
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
               ))}
             </div>
 
-             
             <Badge
-                          key={"HISTORY"}
-                          variant="outline"
-                          className={cn(
-                            "px-4 py-2 text-lg transition-all duration-900 mb-4 mt-4",
-                            isDarkMode
-                              ? "border-gray-700 text-gray-400 hover:bg-gray-800"
-                              : "border-gray-400 text-gray-600 hover:bg-gray-200",
-                            
-                          )}
-                        >
-                          History
-                        </Badge>
-            <History />
+              key={"HISTORY"}
+              variant="outline"
+              className={cn(
+                "px-4 py-2 text-lg transition-all duration-900 mb-4 mt-4",
+                isDarkMode
+                  ? "border-gray-700 text-gray-400 hover:bg-gray-800"
+                  : "border-gray-400 text-gray-600 hover:bg-gray-200"
+              )}
+            >
+              History
+            </Badge>
+            <History
+              key={historyRefreshTrigger}
+              isDarkMode={isDarkMode}
+              refreshTrigger={historyRefreshTrigger}
+            />
 
             {filteredNotes.length === 0 && (
               <Card
