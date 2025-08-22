@@ -6,7 +6,9 @@ Secure cloud storage and authentication
 Cross-platform accessibility
 With VOXCRIBE, students, professionals, and creators can turn lectures, meetings, podcasts, and conversations into reliable notes in just a few clicks.
 
-# COMPLETE DOCUMENTATION ABOUT VOXCRIBE : https://drive.google.com/file/d/1WiCI1E1nJ2cQY0jQqNsMwYhNVh-zfHtk/view?usp=drive_link
+# COMPLETE DOCUMENTATION ABOUT VOXCRIBE : 
+https://drive.google.com/file/d/1WiCI1E1nJ2cQY0jQqNsMwYhNVh-zfHtk/view?usp=drive_link
 
-# YOUTUBE LINK FOR COMPLETE TUTORIAL (SCREEN RECORDING) : https://youtu.be/Cf_jPbescoY?si=1HpazPsAa9HR1Oom
+# YOUTUBE LINK FOR COMPLETE TUTORIAL (SCREEN RECORDING) : 
+https://youtu.be/Cf_jPbescoY?si=1HpazPsAa9HR1Oom
 
