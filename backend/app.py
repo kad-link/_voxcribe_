@@ -6,14 +6,27 @@ from supabase import create_client, Client
 import uuid
 import requests
 import time
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Load Whisper once (not on every request)
+print("🎤 Loading Whisper model...")
 model = whisper.load_model("base")
+print("✅ Whisper model loaded successfully")
 
-# Supabase setup
-SUPABASE_URL = "https://mdyrsixljvfxpvyjtadi.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1keXJzaXhsanZmeHB2eWp0YWRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM3OTY2NzksImV4cCI6MjA2OTM3MjY3OX0.ZIf7kFYPlmYkZJzmfArUZEi3fXZFFqwuSBF1RHyVE6Q"
-HF_TOKEN = "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"  # Your token
+# Environment variables
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://mdyrsixljvfxpvyjtadi.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+HF_TOKEN = os.getenv("HF_TOKEN")
+PORT = int(os.getenv("PORT", 5000))
+
+# Validate required environment variables
+if not SUPABASE_KEY:
+    raise ValueError("SUPABASE_KEY environment variable is required")
+if not HF_TOKEN:
+    raise ValueError("HF_TOKEN environment variable is required")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -28,7 +41,7 @@ class HuggingFaceSummarizer:
     def __init__(self, hf_token: str):
         self.api_url = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn"
         self.headers = {"Authorization": f"Bearer {hf_token}"}
-        print(f"✅ HuggingFace Summarizer initialized with token: {hf_token[:10]}...")
+        print(f"✅ HuggingFace Summarizer initialized")
         
     def summarize(self, text: str, max_retries: int = 3):
         print(f"📝 Starting summarization for text: {text[:100]}...")
@@ -63,12 +76,12 @@ class HuggingFaceSummarizer:
                 
                 if response.status_code == 200:
                     result = response.json()
-                    print(f"📋 HF API Response: {result}")
+                    print(f"📋 HF API Response received")
                     
                     if isinstance(result, list) and len(result) > 0:
                         summary = result[0].get('summary_text', '')
                         if summary and summary.strip():
-                            print(f"✅ Summary generated successfully: {summary[:50]}...")
+                            print(f"✅ Summary generated successfully")
                             return summary.strip()
                         else:
                             print("❌ Empty summary_text in response")
@@ -114,11 +127,20 @@ class HuggingFaceSummarizer:
         return cleaned_text
 
 # Initialize summarizer
-print(f"🚀 Initializing summarizer with HF_TOKEN: {HF_TOKEN[:10] if HF_TOKEN else 'None'}...")
+print(f"🚀 Initializing summarizer...")
 summarizer = HuggingFaceSummarizer(HF_TOKEN) if HF_TOKEN else None
 
 if not summarizer:
     print("❌ WARNING: Summarizer not initialized - HF_TOKEN missing!")
+
+@app.route("/health", methods=["GET"])
+def health_check():
+    """Health check endpoint for deployment monitoring"""
+    return jsonify({
+        "status": "healthy",
+        "whisper_loaded": model is not None,
+        "summarizer_ready": summarizer is not None
+    })
 
 @app.route("/transcribe", methods=["POST"])
 def upload_audio():
@@ -143,9 +165,13 @@ def upload_audio():
         transcription_text = result["text"]
         duration = result.get("duration", 0)
         print(f"✅ Transcription completed: {len(transcription_text)} characters")
-        print(f"📝 Transcription preview: {transcription_text[:100]}...")
     except Exception as e:
         print(f"❌ Whisper transcription failed: {str(e)}")
+        # Clean up temp file on error
+        try:
+            os.remove(file_path)
+        except:
+            pass
         return jsonify({"success": False, "error": f"Transcription failed: {str(e)}"}), 500
 
     # Generate AI Summary
@@ -163,14 +189,12 @@ def upload_audio():
             summary = summarizer.summarize(transcription_text)
             
             if summary and summary.strip():
-                print(f"✅ Summary generated successfully: {summary[:100]}...")
+                print(f"✅ Summary generated successfully")
             else:
                 print("❌ Summary generation returned empty result")
                 
         except Exception as e:
             print(f"❌ Summary generation error: {str(e)}")
-
-    print(f"📊 Final summary: {summary[:50] if summary else 'None'}...")
 
     # Clean up temp file
     try:
@@ -216,7 +240,7 @@ def regenerate_summary(recording_id):
         print("🤖 Generating new summary...")
         summary = summarizer.summarize(transcription_text)
         
-        print(f"📊 Regeneration result: {summary[:50] if summary else 'None'}...")
+        print(f"📊 Regeneration result: {'Success' if summary else 'Failed'}")
         
         # Update in database
         supabase.table('recordings').update({
@@ -267,5 +291,10 @@ def test_summary():
         })
 
 if __name__ == "__main__":
-    print("🚀 Starting Flask server with enhanced debugging...")
-    app.run(debug=True)
+    print("🚀 Starting Flask server...")
+    # For development
+    if os.getenv("FLASK_ENV") == "development":
+        app.run(debug=True, host="0.0.0.0", port=PORT)
+    else:
+        # For production (gunicorn will handle this)
+        app.run(host="0.0.0.0", port=PORT)
